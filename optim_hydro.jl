@@ -31,8 +31,8 @@ using XLSX
 
     ## Production (MW) Heure par heure de juillet à juin sur un an
     hydro_fatal = XLSX.readdata(file_cas, "Détails historique hydro", "M" * string(2 + delimitation_min) * ":M" * string(2 + delimitation_max)) # Production hydraulique fatale
-    lacs = XLSX.readdata(file_cas, "Détails historique hydro", "N" * string(2 + delimitation_min) * ":N" * string(2 + delimitation_max)) # Production hydraulique issue des lacs
-    step = XLSX.readdata(file_cas, "Détails historique hydro", "O" * string(2 + delimitation_min) * ":O" * string(2 + delimitation_max)) # Production hydraulique issue des STEP
+    #lacs = XLSX.readdata(file_cas, "Détails historique hydro", "N" * string(2 + delimitation_min) * ":N" * string(2 + delimitation_max)) # Production hydraulique issue des lacs
+    #step = XLSX.readdata(file_cas, "Détails historique hydro", "O" * string(2 + delimitation_min) * ":O" * string(2 + delimitation_max)) # Production hydraulique issue des STEP
     wind = XLSX.readdata(file_tp, "TP", "D" * string(10 + delimitation_min) * ":D" * string(10 + delimitation_max)) # Production éolienne
     solar = XLSX.readdata(file_tp, "TP", "E" * string(10 + delimitation_min) * ":E" * string(10 + delimitation_max)) # Production solaire
     thermal_fatal = XLSX.readdata(file_tp, "TP", "G" * string(10 + delimitation_min) * ":G" * string(10 + delimitation_max)) # Production thermique fatale
@@ -105,17 +105,17 @@ using XLSX
     Pmax_cogen = XLSX.readdata(file_cas, "Parc électrique", "C11") * ones(Ncogen) # puissance maximale (MW)
 
     ## Données du réservoir hydraulique
-    Nhy = 1 # nombre d'unités de génération
+    Nhy = 1 # nombre d'unités de génération, on suppose qu'on a un grand lac
     Pmin_hy = zeros(Nhy) # puissance minimale (MW) (nulle ici)
     Pmax_hy = XLSX.readdata(file_cas, "Parc électrique", "C20") * ones(Nhy) # puissance maximale (MW)
-    # RAJOUTER LE STOCK HYDRO À CHAQUE INSTANT
-    #e_hy_stock = XLSX.readdata(file_cas, "Stock hydro", "B4")/100 * XLSX.readdata(file_cas, "Stock hydro", "B1")*1000000 * ones(Nhy) #MWh, le stock hydro, B4 = % du stock B1 en TWh
-    e_hy_stockmax = XLSX.readdata(file_cas, "Stock hydro", "D1") * 1000 * ones(Nhy) #MWh, le stock hydro max du barrage
-    e_hy = 1000 * ones(Nhy) # MWh, au début (juste pour faire run pour l'instant)
-    e_hy_low = e_hy_stockmax .* XLSX.readdata(file_cas, "Stock hydro", "D" * string(4 + delimitation_min) * ":D" * string(4 + delimitation_max)) / 100 # plus bas niveau du réservoir au premier jour
-    e_hy_high = e_hy_stockmax .* XLSX.readdata(file_cas, "Stock hydro", "E" * string(4 + delimitation_min) * ":E" * string(4 + delimitation_max)) / 100 # plus haut niveau du parc du réservoir au premier jour
-
     costs_hy = 0 * ones(Nhy) #MWh, gratuit
+
+    # Hydro
+    e_hy_stockmax = XLSX.readdata(file_cas, "Stock hydro", "D1") * 1000000 * ones(Nhy) #MWh, le stock hydro max du lac
+    e_hy_low = e_hy_stockmax .* XLSX.readdata(file_cas, "Stock hydro", "D" * string(4 + delimitation_min) * ":D" * string(4 + delimitation_max)) / 100 # plus bas niveau du lac aux mêmes jours de l'année
+    e_hy_high = e_hy_stockmax .* XLSX.readdata(file_cas, "Stock hydro", "E" * string(4 + delimitation_min) * ":E" * string(4 + delimitation_max)) / 100 # plus haut niveau du parc du lac aux mêmes jours de l'année
+    
+    e_hy_init = (e_hy_high[1]+e_hy_low[1])/2 * ones(Nhy) # MWh, je mets la moyenne du stock à cette date
 
     # Apports en eau de juillet à juin en MWh, heure par heure (hypothèse : pluie continue égale à la moyenne mensuelle)
     apports_hydro = XLSX.readdata(file_cas, "Stock hydro", "F" * string(4 + delimitation_min) * ":F" * string(4 + delimitation_max))
@@ -193,6 +193,7 @@ using XLSX
 
     #hydro generation variables
     @variable(model, Phy[1:Tmax, 1:Nhy] >= 0)
+    @variable(model, e_hy[1:Tmax, 1:Nhy] >= 0) # Le stock d'eau dans notre lac
 
     #unsupplied energy variables
     @variable(model, Puns[1:Tmax] >= 0)
@@ -217,8 +218,10 @@ using XLSX
 #############################
 #Définition des contraintes
 
+    ##
     #balance constraint
-    @constraint(model, balance[t in 1:Tmax], sum(Pnuc[t, k] for k in 1:Nnuc) + sum(Pgaz[t, h] for h in 1:Ngaz) + sum(Pcoal[t, g] for g in 1:Ncoal) + sum(Pfuel[t, i] for i in 1:Nfuel) + Pcogen[t] + sum(Phy[t, j] for j in 1:Nhy) + Pres[t] + Pdecharge_STEP[t] + Puns[t] - conso[t] - Pexc[t] - Pcharge_STEP[t] == 0)
+        @constraint(model, balance[t in 1:Tmax], sum(Pnuc[t, k] for k in 1:Nnuc) + sum(Pgaz[t, h] for h in 1:Ngaz) + sum(Pcoal[t, g] for g in 1:Ncoal) + sum(Pfuel[t, i] for i in 1:Nfuel) + Pcogen[t] + sum(Phy[t, j] for j in 1:Nhy) + Pres[t] + Pdecharge_STEP[t] + Puns[t] - conso[t] - Pexc[t] - Pcharge_STEP[t] == 0)
+    ##
 
     ##
     #constraints for NUCLEAR clusters
@@ -327,27 +330,34 @@ using XLSX
     ##
 
     ##
-    #constraints for HYDRO clusters
+    #constraints for HYDRO clusters -> NOTRE SUJET
     
-        #on met un pourcentage minimum en dessous duquel on ne doit pas descendre, par heure : e_hy_low
-        @constraint(model, pompage_max[t in 1:Tmax, h in 1:Nhy], e_hy[h] >= e_hy_low[t])
+        # On ne dépasse jamais le stock max de nos lacs (contrainte inopérante si on impose déjà de ne pas dépasser le max historique)
+        @constraint(model, stock_max_hydro[t in 1:Tmax, h in 1:Nhy], e_hy[t,h] <= e_hy_stockmax[h])
+        # On ne descend pas en-dessous du minimum et on monte pas au-dessus du max observé à la même date sur les années précédentes (c'est NOTRE choix)
+        @constraint(model, pompage_max[t in 1:Tmax, h in 1:Nhy], e_hy_low[t] <= e_hy[t,h] <= e_hy_high[t])
 
-        #hydro unit constraints
-        @constraint(model, bounds_hy[t in 1:Tmax, h in 1:Nhy], Pmin_hy[h] <= Phy[t, h] <= Pmax_hy[h])
-        #hydro stock constraint
-        @constraint(model, stock_hy[h in 1:Nhy], sum(Phy[t, h] for t in 1:Tmax) <= e_hy[h])
+        # #hydro unit constraints ; J'AI REPRIS LE FORMALISME DE LA STEP : 1ère contrainte équivant à 1ère contrainte STEP, etc
+        @constraint(model, bounds_hy[t in 1:Tmax, h in 1:Nhy], Pmin_hy[h] <= Phy[t, h] <= Pmax_hy[h]) # On utilise entre 0 et 6000 MW à chaque instant
+        #@constraint(model, stock_hy[h in 1:Nhy], sum(Phy[t, h] for t in 1:Tmax) <= e_hy[h])
 
+        @constraint(model, init_stock_hy[h in 1:Nhy], e_hy[1,h] == e_hy_init[h]) # Changer la valeur plus haut selon modèle
+        @constraint(model, end_Pdecharge_lac[h in 1:Nhy], Phy[Tmax, h] <= e_hy[Tmax, h])
+        # # 2 contraintes non-reprises : Tmax_stock_STEP et init_Pdecharge_STEP, cf plus bas
+        @constraint(model, evol_stock_lac[t in 1:Tmax-1, h in 1:Nhy], e_hy[t+1,h] - apports_hydro[t] + Phy[t, h] - e_hy[t,h] == 0)
+        # # (contrainte stock_max_STEP équivaut à contrainte pompage_max plus haut)
     ##
 
-    #weekly STEP ATTENTION ici pour 1 semaine, si élargissement fenêtre (ex: incluer 3 jours avant), peut-être
-    @constraint(model, Pcharge_max_STEP[t in 1:Tmax], Pcharge_STEP[t] <= Pmax_STEP)
-    @constraint(model, Pdecharge_max_STEP[t in 1:Tmax], Pdecharge_STEP[t] <= Pmax_STEP)
-    @constraint(model, init_stock_STEP, stock_STEP[1] == 0)
-    @constraint(model, end_Pdecharge_STEP, Pdecharge_STEP[Tmax] <= stock_STEP[Tmax])
-    @constraint(model, Tmax_stock_STEP, stock_STEP[Tmax] == stock_STEP[1])
-    @constraint(model, init_Pdecharge_STEP, Pdecharge_STEP[1] == 0)
-    @constraint(model, evol_stock_STEP[t in 1:Tmax-1], stock_STEP[t+1] - stock_STEP[t] - rSTEP * Pcharge_STEP[t] + Pdecharge_STEP[t] == 0)
-    @constraint(model, stock_max_STEP[t in 1:Tmax], stock_STEP[t] <= 24 * 7 * Pmax_STEP)
+    ##
+    #weekly STEP ATTENTION ici pour 1 semaine, si élargissement fenêtre (ex: inclure 3 jours avant), peut-être
+        @constraint(model, Pcharge_max_STEP[t in 1:Tmax], Pcharge_STEP[t] <= Pmax_STEP)
+        @constraint(model, Pdecharge_max_STEP[t in 1:Tmax], Pdecharge_STEP[t] <= Pmax_STEP)
+        @constraint(model, init_stock_STEP, stock_STEP[1] == 0) # À remplacer pour lire le dernier stock de la semaine dernière
+        @constraint(model, end_Pdecharge_STEP, Pdecharge_STEP[Tmax] <= stock_STEP[Tmax])
+        @constraint(model, Tmax_stock_STEP, stock_STEP[Tmax] == stock_STEP[1]) # Hypothèse forte? On impose qu'on finit chaque sem avec le stock du début. Je pense qu'il faut lever
+        @constraint(model, init_Pdecharge_STEP, Pdecharge_STEP[1] == 0) # Idem pourquoi on aurait pas le droit de prélever le premier jour ?
+        @constraint(model, evol_stock_STEP[t in 1:Tmax-1], stock_STEP[t+1] - stock_STEP[t] - rSTEP * Pcharge_STEP[t] + Pdecharge_STEP[t] == 0)
+        @constraint(model, stock_max_STEP[t in 1:Tmax], stock_STEP[t] <= 24 * 7 * Pmax_STEP)
 
 #############################
 
@@ -472,197 +482,206 @@ using XLSX
 #############################
 
 #############################
-#Output
+#Run et affichage de la sortie
+
+    #------------------------------
+    #print the model
+    #print(model)
+    #------------------------------
+    #solve the model
+    optimize!(model)
+    #------------------------------
+    #Results
+    #@show termination_status(model)
+    #@show objective_value(model)
+
 #############################
 
-#------------------------------
-#print the model
-#print(model)
-#------------------------------
-#solve the model
-optimize!(model)
-#------------------------------
-#Results
-#@show termination_status(model)
-#@show objective_value(model)
+#############################
+#Écriture des sorties pour bouclage sur plusieurs semaines
 
-###############
+    # écrire up, down et depuis combien de temps
+    #Nuclear
+    nuc_gen = value.(Pnuc)
+    Up_nuc = value.(UPnuc)
+    Do_nuc = value.(DOnuc)
+    Uc_nuc = value.(UCnuc)
+    timeDo_nuc = value.(timeDOnuc) # Ne fonctionne pas
+    timeUp_nuc = value.(timeUPnuc) # Ne fonctionne pas
 
+    #Gaz
+    gaz_gen = value.(Pgaz)
+    Up_gaz = value.(UPgaz)
+    Do_gaz = value.(DOgaz)
+    Uc_gaz = value.(UCgaz)
+    timeDo_gaz = value.(timeDOgaz) # Ne fonctionne pas
+    timeUp_gaz = value.(timeUPgaz) # Ne fonctionne pas
 
-# écrire up, down et depuis combien de temps
-#Nuclear
-Up_nuc = value.(UPnuc)
-Do_nuc = value.(DOnuc)
-Uc_nuc = value.(UCnuc)
-timeDo_nuc = value.(timeDOnuc)
-timeUp_nuc = value.(timeUPnuc)
+    #Fuel
+    fuel_gen = value.(Pfuel)
+    Up_fuel = value.(UPfuel)
+    Do_fuel = value.(DOfuel)
+    Uc_fuel = value.(UCfuel)
+    # timeDo_fuel=value.(timeDOfuel)
+    # timeUp_fuel=value.(timeUPfuel)
 
-#Gaz
-Up_gaz = value.(UPgaz)
-Do_gaz = value.(DOgaz)
-Uc_gaz = value.(UCgaz)
-timeDo_gaz = value.(timeDOgaz)
-timeUp_gaz = value.(timeUPgaz)
+    #Coal
+    coal_gen = value.(Pcoal)
+    Up_coal = value.(UPcoal)
+    Do_coal = value.(DOcoal)
+    Uc_coal = value.(UCcoal)
+    # timeDo_coal=value.(timeDOcoal)
+    # timeUp_coal=value.(timeUPcoal)
 
-#Fuel
-Up_fuel = value.(UPfuel)
-Do_fuel = value.(DOfuel)
-Uc_fuel = value.(UCfuel)
-# timeDo_fuel=value.(timeDOfuel)
-# timeUp_fuel=value.(timeUPfuel)
+    #Cogen
+    cogen_gen = value.(Pcogen)
 
-#Coal
-Up_coal = value.(UPcoal)
-Do_coal = value.(DOcoal)
-Uc_coal = value.(UCcoal)
-# timeDo_coal=value.(timeDOcoal)
-# timeUp_coal=value.(timeUPcoal)
+    #Hydro, le plus important
+    hy_gen = value.(Phy)
+    stock_hy = value.(e_hy)
 
-#exports results as csv file
-nuc_gen = value.(Pnuc)
-gaz_gen = value.(Pgaz)
-coal_gen = value.(Pcoal)
-fuel_gen = value.(Pfuel)
-cogen_gen = value.(Pcogen)
-hy_gen = value.(Phy)
-exc_gen = value.(Pexc)
-STEP_charge = -value.(Pcharge_STEP)
-STEP_decharge = value.(Pdecharge_STEP)
+    #In excess
+    exc_gen = value.(Pexc)
 
+    #weekly STEP variables
+    STEP_charge = -value.(Pcharge_STEP) # Notez que pour l'affichage Excel on compte la charge de la STEP négativement
+    STEP_decharge = value.(Pdecharge_STEP)
 
+    # Le document de gestion de sortie pour la semaine en cours
 
-# Le document de gestion de sortie pour la semaine en cours
-
-    # file handling in write mode
-    f = open("Output/results_k_step.csv", "w")
-    lines = readlines(f)
-    new_lines = map(line -> replace(line, ";" => ","), lines)
-    for line in new_lines
-        write(f, line * "\n")
-    end
-
-    for name in names_nuc
-        write(f, "$name,")
-    end
-    for name in names_gaz
-        write(f, "$name,")
-    end
-    for name in names_coal
-        write(f, "$name,")
-    end
-    for name in names_fuel
-        write(f, "$name,")
-    end
-    write(f, "Cogén,Hydro,STEP turbinage,Puissance résiduelle,STEP pompage,Conso,Conso nette,")
-
-    write(f, "Puissance excès\n")
-
-    for t in 1:Tmax
-        for g in 1:Nnuc
-            write(f, "$(nuc_gen[t,g]) , ")
-        end
-        for g in 1:Ngaz
-            write(f, "$(gaz_gen[t,g]) , ")
-        end
-        for g in 1:Ncoal
-            write(f, "$(coal_gen[t,g]) , ")
-        end
-        for g in 1:Nfuel
-            write(f, "$(fuel_gen[t,g]) , ")
-        end
-        for g in 1:Ncogen
-            write(f, "$(cogen_gen[t,g]) , ")
-        end
-        for h in 1:Nhy
-            write(f, "$(hy_gen[t,h]) ,")
-        end
-        write(f, "$(STEP_decharge[t]),$(Pres[t]), $(STEP_charge[t]),$(conso[t]),$(conso[t]-STEP_charge[t]+exc_gen[t]-Pres[t]),")
-        write(f, "$(exc_gen[t])\n")
-
-    end
-
-    close(f)
-#
-
-# Le document de gestion des bords
-
-    bords = open("Output/results_k_effetbord.csv", "w")
-
-    lines = readlines(bords)
-    new_lines = map(line -> replace(line, ";" => ","), lines)
-    for line in new_lines
-        write(bords, line * "\n")
-    end
-
-    # LES TITRES
-
-    for name in names_nuc
-        write(bords, "UP" * "$name ,")
-        write(bords, "timeUP" * "$name ,")
-        write(bords, "DO" * "$name ,")
-        write(bords, "timeDO" * "$name ,")
-        write(bords, "UC" * "$name ,")
-    end
-
-    for name in names_gaz
-        write(bords, "UP" * "$name ,")
-        write(bords, "timeUP" * "$name ,")
-        write(bords, "DO" * "$name ,")
-        write(bords, "timeDO" * "$name ,")
-        write(bords, "UC" * "$name ,")
-    end
-
-    for name in names_coal
-        write(bords, "UP" * "$name ,")
-        write(bords, "DO" * "$name ,")
-        write(bords, "UC" * "$name ,")
-    end
-
-    for name in names_fuel
-        write(bords, "UP" * "$name ,")
-        write(bords, "DO" * "$name ,")
-        write(bords, "UC" * "$name ,")
-    end
-
-    write(bords, "\n")
-
-    # LES VALEURS
-
-    for t in 1:Tmax
-        for g in 1:Nnuc
-            write(bords, "$(Up_nuc[t,g]) , ")
-            write(bords, "$(timeUp_nuc[t,g]) , ")
-            write(bords, "$(Do_nuc[t,g]) , ")
-            write(bords, "$(timeDo_nuc[t,g]) , ")
-            write(bords, "$(Uc_nuc[t,g]) , ")
-        end
-        for g in 1:Ngaz
-            write(bords, "$(Up_gaz[t,g]) , ")
-            write(bords, "$(timeUp_gaz[t,g]) , ")
-            write(bords, "$(Do_gaz[t,g]) , ")
-            write(bords, "$(timeDo_gaz[t,g]) , ")
-            write(bords, "$(Uc_gaz[t,g]) , ")
-        end
-        for g in 1:Nfuel
-            write(bords, "$(Up_fuel[t,g]) , ")
-            #write(bords,"$(timeUp_fuel[t,g]) , ")
-            write(bords, "$(Do_fuel[t,g]) , ")
-            #write(bords,"$(timeDo_fuel[t,g]) , ")
-            write(bords, "$(Uc_fuel[t,g]) , ")
+        # file handling in write mode
+        f = open("Output/results_k_step.csv", "w")
+        lines = readlines(f)
+        new_lines = map(line -> replace(line, ";" => ","), lines)
+        for line in new_lines
+            write(f, line * "\n")
         end
 
-        for g in 1:Ncoal
-            write(bords, "$(Up_coal[t,g]) , ")
-            #write(bords,"$(timeUp_coal[t,g]) , ")
-            write(bords, "$(Do_coal[t,g]) , ")
-            #write(bords,"$(timeDo_coal[t,g]) , ")
-            write(bords, "$(Uc_coal[t,g]) , ")
+        for name in names_nuc
+            write(f, "$name,")
+        end
+        for name in names_gaz
+            write(f, "$name,")
+        end
+        for name in names_coal
+            write(f, "$name,")
+        end
+        for name in names_fuel
+            write(f, "$name,")
+        end
+        write(f, "Cogén,Hydro,STEP turbinage,Puissance résiduelle,STEP pompage,Conso,Conso nette,")
+
+        write(f, "Puissance excès,Stock d'eau de notre modèle\n")
+
+        for t in 1:Tmax
+            for g in 1:Nnuc
+                write(f, "$(nuc_gen[t,g]) , ")
+            end
+            for g in 1:Ngaz
+                write(f, "$(gaz_gen[t,g]) , ")
+            end
+            for g in 1:Ncoal
+                write(f, "$(coal_gen[t,g]) , ")
+            end
+            for g in 1:Nfuel
+                write(f, "$(fuel_gen[t,g]) , ")
+            end
+            for g in 1:Ncogen
+                write(f, "$(cogen_gen[t,g]) , ")
+            end
+            for h in 1:Nhy
+                write(f, "$(hy_gen[t,h]) ,")
+            end
+            write(f, "$(STEP_decharge[t]),$(Pres[t]), $(STEP_charge[t]),$(conso[t]),$(conso[t]-STEP_charge[t]+exc_gen[t]-Pres[t]),")
+            write(f, "$(exc_gen[t]) ,")
+            write(f, "$(stock_hy[t]/e_hy_stockmax[1]*100)\n")
+
         end
 
-        write(bords, " \n")
+        close(f)
+    #
 
-    end
+    # Le document de gestion des bords
+
+        bords = open("Output/results_k_effetbord.csv", "w")
+
+        lines = readlines(bords)
+        new_lines = map(line -> replace(line, ";" => ","), lines)
+        for line in new_lines
+            write(bords, line * "\n")
+        end
+
+        # LES TITRES
+
+        for name in names_nuc
+            write(bords, "UP" * "$name ,")
+            write(bords, "timeUP" * "$name ,")
+            write(bords, "DO" * "$name ,")
+            write(bords, "timeDO" * "$name ,")
+            write(bords, "UC" * "$name ,")
+        end
+
+        for name in names_gaz
+            write(bords, "UP" * "$name ,")
+            write(bords, "timeUP" * "$name ,")
+            write(bords, "DO" * "$name ,")
+            write(bords, "timeDO" * "$name ,")
+            write(bords, "UC" * "$name ,")
+        end
+
+        for name in names_coal
+            write(bords, "UP" * "$name ,")
+            write(bords, "DO" * "$name ,")
+            write(bords, "UC" * "$name ,")
+        end
+
+        for name in names_fuel
+            write(bords, "UP" * "$name ,")
+            write(bords, "DO" * "$name ,")
+            write(bords, "UC" * "$name ,")
+        end
+
+        write(bords, "\n")
+
+        # LES VALEURS
+
+        for t in 1:Tmax
+            for g in 1:Nnuc
+                write(bords, "$(Up_nuc[t,g]) , ")
+                write(bords, "$(timeUp_nuc[t,g]) , ")
+                write(bords, "$(Do_nuc[t,g]) , ")
+                write(bords, "$(timeDo_nuc[t,g]) , ")
+                write(bords, "$(Uc_nuc[t,g]) , ")
+            end
+            for g in 1:Ngaz
+                write(bords, "$(Up_gaz[t,g]) , ")
+                write(bords, "$(timeUp_gaz[t,g]) , ")
+                write(bords, "$(Do_gaz[t,g]) , ")
+                write(bords, "$(timeDo_gaz[t,g]) , ")
+                write(bords, "$(Uc_gaz[t,g]) , ")
+            end
+            for g in 1:Nfuel
+                write(bords, "$(Up_fuel[t,g]) , ")
+                #write(bords,"$(timeUp_fuel[t,g]) , ")
+                write(bords, "$(Do_fuel[t,g]) , ")
+                #write(bords,"$(timeDo_fuel[t,g]) , ")
+                write(bords, "$(Uc_fuel[t,g]) , ")
+            end
+
+            for g in 1:Ncoal
+                write(bords, "$(Up_coal[t,g]) , ")
+                #write(bords,"$(timeUp_coal[t,g]) , ")
+                write(bords, "$(Do_coal[t,g]) , ")
+                #write(bords,"$(timeDo_coal[t,g]) , ")
+                write(bords, "$(Uc_coal[t,g]) , ")
+            end
+
+            write(bords, " \n")
+
+        end
 
 
-    close(bords)
-#
+        close(bords)
+    #
+
+#############################
