@@ -6,6 +6,8 @@ import time
 # Définir le répertoire de travail
 #os.chdir('/Users/j.coeuillet/Library/Mobile Documents/com~apple~CloudDocs/ISAE-SUPAERO/ETE/Julia/Optim Julia')
 
+os.system('cls' if os.name == 'nt' else 'clear')
+
 # Chemin du fichier des résultats
 filePath = "Output/results_k_step.csv"
 filePath_border = "Output/results_k_effetbord.csv"
@@ -15,8 +17,10 @@ data = pd.read_csv(filePath, delimiter=",")
 bord = pd.read_csv(filePath_border, delimiter=",")
 bord = bord.round(0) # Pour mettre les valeurs en binaire, car sinon on a des e-15
 
+jour_en_trop =2
+
 # Définir le nombre de semaines simulées
-nb = 52
+nb = 4
 
 # Créer un DataFrame vide pour accumuler les résultats
 final_data = pd.DataFrame()
@@ -51,6 +55,7 @@ for semaine in range(1, nb + 1):  # On boucle sur nb semaines
         bord = pd.read_csv(filePath_border, delimiter=",")
         bord = bord.round(0) # Pour mettre les valeurs en binaire, car sinon on a des e-15
 
+        ##
         # Ajouter les colonnes Jour et Heure avec des valeurs vides
         if 'Semaine' not in data.columns:
             data.insert(0, 'Semaine', '')  # Insérer la colonne 'Semaine'
@@ -62,27 +67,34 @@ for semaine in range(1, nb + 1):  # On boucle sur nb semaines
             data.insert(3, 'Jour cumulé', '') # Insérer la colonne 'Jour cumulé'
         if 'Heure cumulée' not in data.columns:
             data.insert(4, 'Heure cumulée', '') # Insérer la colonne 'Heure cumulée'
+        ##
 
         # Numéroter les semaines (de 1 à nb)
-        data['Semaine'] = [semaine for i in range(168)]  # Diviser les heures totales en semaines
+        data['Semaine'] = [semaine for i in range((7+jour_en_trop)*24)]  # Diviser les heures totales en semaines
 
         # Numéroter les jours (de 1 à 7*nb)
-        data['Jour'] = [(i // 24) % 7 + 1 for i in range(168)]  # Numéroter les jours dans la semaine (de 1 à 7)
+        data['Jour'] = [(i // 24) % 7 + 1 for i in range((7+jour_en_trop)*24)]  # Numéroter les jours dans la semaine (de 1 à 7)
 
         # Numéroter les heures (de 1 à 24)
-        data['Heure'] = [i % 24 + 1 for i in range(168)]  # Numéroter les heures de la journée (de 1 à 24)
+        data['Heure'] = [i % 24 + 1 for i in range((7+jour_en_trop)*24)]  # Numéroter les heures de la journée (de 1 à 24)
 
         # Numéroter les jours (de 1 à 365)
-        data['Jour cumulé'] = data['Jour'] + [(semaine-1)*7]
+        data['Jour cumulé'] = data['Jour'] + [(semaine-1)*(7+jour_en_trop)]
 
         # Numéroter les heures (de 1 à 8760)
-        data['Heure cumulée'] = data['Heure'] + [(semaine-1)*168]
+        data['Heure cumulée'] = data.index + 1 + [(semaine-1)*(7+jour_en_trop)*24]
         
         # Réorganiser les colonnes pour que Semaine, Jour et Heure soient à gauche
         #data = data[['Semaine', 'Jour', 'Heure'] + [col for col in data.columns if col not in ['Semaine', 'Jour', 'Heure']]]
 
         # Empiler les résultats dans le DataFrame final
         final_data = pd.concat([final_data, data], ignore_index=True)
+        final_data = final_data.iloc[:-24]
+
+        newdf = pd.DataFrame()
+        newdf['Stock'] = data["Stock d'eau de notre modèle"]
+        newdf.to_excel("Données/Stock_k_step.xlsx", index = False)
+        #print(newdf.tail(4)*1400000/100, "\n")
 
     except FileNotFoundError:
         print(f"Fichier {filePath} non trouvé après l'itération {semaine}")

@@ -13,12 +13,14 @@ using XLSX
     file_tp = ("Données/TP O&D.xlsx") # données du TP OED
     num_semaine = ("Données/week.xlsx") # indice de la semaine modélisée, donné par le script python
     effet_bord = ("Données/bord.xlsx") # données associées à l'effet de bord
+    stock = ("Données/Stock_k_step.xlsx") #tentative de bouclage
 
     #Paramètres
     week = XLSX.readdata(num_semaine, "Sheet1", "A2")
     week = Int64(week[1])
-    Tmax = 7 * 24 # simulation pour une semaine, heure par heure
-    delimitation_min = Tmax * (week)
+    jour_en_trop = 2
+    Tmax = (7+jour_en_trop) * 24 # simulation pour une semaine, heure par heure
+    delimitation_min = 7*24 * (week)
     delimitation_max = Tmax * (week+1)
 
 #############################
@@ -115,10 +117,19 @@ using XLSX
     e_hy_low = e_hy_stockmax .* XLSX.readdata(file_cas, "Stock hydro", "D" * string(4 + delimitation_min) * ":D" * string(4 + delimitation_max)) / 100 # plus bas niveau du lac aux mêmes jours de l'année
     e_hy_high = e_hy_stockmax .* XLSX.readdata(file_cas, "Stock hydro", "E" * string(4 + delimitation_min) * ":E" * string(4 + delimitation_max)) / 100 # plus haut niveau du parc du lac aux mêmes jours de l'année
     
-    e_hy_init = (e_hy_high[1]+e_hy_low[1])/2 * ones(Nhy) # MWh, je mets la moyenne du stock à cette date
-
     # Apports en eau de juillet à juin en MWh, heure par heure (hypothèse : pluie continue égale à la moyenne mensuelle)
     apports_hydro = XLSX.readdata(file_cas, "Stock hydro", "F" * string(4 + delimitation_min) * ":F" * string(4 + delimitation_max))
+
+
+    if week == 0
+        e_hy_init = (e_hy_high[1]+e_hy_low[1])/2 * ones(Nhy,1) # MWh, je mets la moyenne du stock à cette date
+    else
+        e_hy_init = e_hy_stockmax[1] * XLSX.readdata(stock, "Sheet1", "A169")  / 100 * ones(Nhy,1) + apports_hydro[1]*ones(Nhy)
+        #e_hy_init = (e_hy_high[1]+e_hy_low[1])/2 * ones(Nhy) # MWh, je mets la moyenne du stock à cette date
+    end
+
+    #println("E_hy_init = ", e_hy_init[1])
+    #println(typeof(e_hy_init))
 
     #data for STEP
     Pmax_STEP = XLSX.readdata(file_cas, "Parc électrique", "E21") #MW
@@ -335,17 +346,19 @@ using XLSX
         # On ne dépasse jamais le stock max de nos lacs (contrainte inopérante si on impose déjà de ne pas dépasser le max historique)
         @constraint(model, stock_max_hydro[t in 1:Tmax, h in 1:Nhy], e_hy[t,h] <= e_hy_stockmax[h])
         # On ne descend pas en-dessous du minimum et on monte pas au-dessus du max observé à la même date sur les années précédentes (c'est NOTRE choix)
-        @constraint(model, pompage_max[t in 1:Tmax, h in 1:Nhy], e_hy_low[t] <= e_hy[t,h] <= e_hy_high[t])
+        @constraint(model, pompage_max[t in 1:Tmax, h in 1:Nhy], e_hy_low[t] <= e_hy[t,h])
+        @constraint(model, pompage_min[t in 1:Tmax, h in 1:Nhy], e_hy[t,h] <= e_hy_high[t])
 
         # #hydro unit constraints ; J'AI REPRIS LE FORMALISME DE LA STEP : 1ère contrainte équivant à 1ère contrainte STEP, etc
         @constraint(model, bounds_hy[t in 1:Tmax, h in 1:Nhy], Pmin_hy[h] <= Phy[t, h] <= Pmax_hy[h]) # On utilise entre 0 et 6000 MW à chaque instant
         #@constraint(model, stock_hy[h in 1:Nhy], sum(Phy[t, h] for t in 1:Tmax) <= e_hy[h])
 
         @constraint(model, init_stock_hy[h in 1:Nhy], e_hy[1,h] == e_hy_init[h]) # Changer la valeur plus haut selon modèle
-        @constraint(model, end_Pdecharge_lac[h in 1:Nhy], Phy[Tmax, h] <= e_hy[Tmax, h])
+        #@constraint(model, end_Pdecharge_lac[h in 1:Nhy], Phy[Tmax, h] <= e_hy[Tmax, h])
         # # 2 contraintes non-reprises : Tmax_stock_STEP et init_Pdecharge_STEP, cf plus bas
         @constraint(model, evol_stock_lac[t in 1:Tmax-1, h in 1:Nhy], e_hy[t+1,h] - apports_hydro[t] + Phy[t, h] - e_hy[t,h] == 0)
         # # (contrainte stock_max_STEP équivaut à contrainte pompage_max plus haut)
+        @constraint(model, init_Pdecharge_hy, Phy[1] == 0) # Idem pourquoi on aurait pas le droit de prélever le premier jour ?
     ##
 
     ##
@@ -685,3 +698,6 @@ using XLSX
     #
 
 #############################
+
+#println("E_hy au début = ", value(e_hy[1,1]))
+#println(typeof(value(e_hy[1,1])))
